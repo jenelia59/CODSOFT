@@ -1,0 +1,446 @@
+import tkinter as tk
+from tkinter import ttk, messagebox, font
+import json
+import os
+from datetime import datetime
+
+DATA_FILE = "todo_data.json"
+
+def load_tasks():
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r") as f:
+            return json.load(f)
+    return []
+
+def save_tasks(tasks):
+    with open(DATA_FILE, "w") as f:
+        json.dump(tasks, f, indent=2)
+
+class ToDoApp:
+
+    BG        = "#0f0f13"
+    PANEL     = "#1a1a24"
+    CARD      = "#22222f"
+    ACCENT    = "#7c6af7"
+    ACCENT2   = "#a78bfa"
+    SUCCESS   = "#34d399"
+    DANGER    = "#f87171"
+    WARN      = "#fbbf24"
+    TEXT      = "#e2e8f0"
+    SUBTEXT   = "#94a3b8"
+    BORDER    = "#2d2d3f"
+
+    PRIORITIES = {"High": DANGER, "Medium": WARN, "Low": SUCCESS}
+
+    def __init__(self, root):
+        self.root = root
+        self.root.title("✦ TaskFlow — To-Do Manager")
+        self.root.geometry("900x680")
+        self.root.minsize(720, 520)
+        self.root.configure(bg=self.BG)
+
+        self.tasks = load_tasks()
+        self.filter_var  = tk.StringVar(value="All")
+        self.sort_var    = tk.StringVar(value="Date Added")
+        self.search_var  = tk.StringVar()
+        self.search_var.trace_add("write", lambda *_: self.refresh())
+
+        self._build_fonts()
+        self._build_styles()
+        self._build_ui()
+        self.refresh()
+
+    def _build_fonts(self):
+        self.f_title   = font.Font(family="Segoe UI", size=22, weight="bold")
+        self.f_sub     = font.Font(family="Segoe UI", size=10)
+        self.f_label   = font.Font(family="Segoe UI", size=11, weight="bold")
+        self.f_entry   = font.Font(family="Segoe UI", size=11)
+        self.f_task    = font.Font(family="Segoe UI", size=12, weight="bold")
+        self.f_meta    = font.Font(family="Segoe UI", size=9)
+        self.f_btn     = font.Font(family="Segoe UI", size=10, weight="bold")
+        self.f_count   = font.Font(family="Segoe UI", size=28, weight="bold")
+
+    def _build_styles(self):
+        s = ttk.Style()
+        s.theme_use("clam")
+        s.configure("TCombobox",
+                     fieldbackground=self.CARD, background=self.CARD,
+                     foreground=self.TEXT, bordercolor=self.BORDER,
+                     arrowcolor=self.ACCENT2, selectbackground=self.ACCENT,
+                     selectforeground=self.TEXT, padding=6)
+        s.map("TCombobox", fieldbackground=[("readonly", self.CARD)],
+              foreground=[("readonly", self.TEXT)])
+        s.configure("TScrollbar",
+                     background=self.CARD, troughcolor=self.PANEL,
+                     arrowcolor=self.SUBTEXT, bordercolor=self.PANEL)
+
+    def _build_ui(self):
+        # Sidebar
+        self.sidebar = tk.Frame(self.root, bg=self.PANEL, width=230)
+        self.sidebar.pack(side="left", fill="y")
+        self.sidebar.pack_propagate(False)
+        self._build_sidebar()
+
+        
+        self.main = tk.Frame(self.root, bg=self.BG)
+        self.main.pack(side="right", fill="both", expand=True)
+        self._build_header()
+        self._build_controls()
+        self._build_task_list()
+        self._build_form()
+
+  
+    def _build_sidebar(self):
+      
+        logo = tk.Frame(self.sidebar, bg=self.PANEL)
+        logo.pack(fill="x", padx=20, pady=(28, 0))
+        tk.Label(logo, text="✦ TaskFlow", font=self.f_title,
+                 bg=self.PANEL, fg=self.ACCENT2).pack(anchor="w")
+        tk.Label(logo, text="Stay organised. Stay ahead.",
+                 font=self.f_sub, bg=self.PANEL, fg=self.SUBTEXT).pack(anchor="w")
+
+        ttk.Separator(self.sidebar).pack(fill="x", padx=16, pady=18)
+
+      
+        self.stat_total     = self._stat_card("Total Tasks",     "0", self.ACCENT2)
+        self.stat_pending   = self._stat_card("Pending",         "0", self.WARN)
+        self.stat_done      = self._stat_card("Completed",       "0", self.SUCCESS)
+        self.stat_high      = self._stat_card("High Priority",   "0", self.DANGER)
+
+        ttk.Separator(self.sidebar).pack(fill="x", padx=16, pady=18)
+
+    
+        tk.Label(self.sidebar, text="FILTER BY STATUS",
+                 font=self.f_meta, bg=self.PANEL, fg=self.SUBTEXT).pack(anchor="w", padx=20)
+        self.filter_btns = {}
+        for label in ["All", "Pending", "Completed"]:
+            b = tk.Button(self.sidebar, text=label, font=self.f_btn,
+                          bg=self.CARD, fg=self.SUBTEXT, relief="flat",
+                          activebackground=self.ACCENT, activeforeground=self.TEXT,
+                          bd=0, pady=8, cursor="hand2",
+                          command=lambda l=label: self._set_filter(l))
+            b.pack(fill="x", padx=16, pady=2)
+            self.filter_btns[label] = b
+
+        ttk.Separator(self.sidebar).pack(fill="x", padx=16, pady=18)
+
+      
+        tk.Button(self.sidebar, text="🗑  Clear Completed", font=self.f_btn,
+                  bg="#2a1a2e", fg=self.DANGER, relief="flat",
+                  activebackground="#3b1f2b", activeforeground=self.DANGER,
+                  bd=0, pady=10, cursor="hand2",
+                  command=self._clear_completed).pack(fill="x", padx=16)
+
+    def _stat_card(self, label, value, color):
+        frame = tk.Frame(self.sidebar, bg=self.CARD, padx=16, pady=12)
+        frame.pack(fill="x", padx=16, pady=4)
+        num = tk.Label(frame, text=value, font=self.f_count, bg=self.CARD, fg=color)
+        num.pack(anchor="w")
+        tk.Label(frame, text=label, font=self.f_meta, bg=self.CARD, fg=self.SUBTEXT).pack(anchor="w")
+        return num
+
+  
+    def _build_header(self):
+        hdr = tk.Frame(self.main, bg=self.BG)
+        hdr.pack(fill="x", padx=24, pady=(24, 0))
+        today = datetime.now().strftime("%A, %d %B %Y")
+        tk.Label(hdr, text="My Tasks", font=self.f_title,
+                 bg=self.BG, fg=self.TEXT).pack(side="left")
+        tk.Label(hdr, text=today, font=self.f_sub,
+                 bg=self.BG, fg=self.SUBTEXT).pack(side="right", anchor="s", pady=6)
+
+    
+    def _build_controls(self):
+        bar = tk.Frame(self.main, bg=self.BG)
+        bar.pack(fill="x", padx=24, pady=12)
+
+      
+        search_frame = tk.Frame(bar, bg=self.CARD, padx=10, pady=0)
+        search_frame.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        tk.Label(search_frame, text="🔍", bg=self.CARD, fg=self.SUBTEXT,
+                 font=self.f_entry).pack(side="left")
+        tk.Entry(search_frame, textvariable=self.search_var,
+                 font=self.f_entry, bg=self.CARD, fg=self.TEXT,
+                 insertbackground=self.ACCENT2, relief="flat",
+                 bd=0).pack(side="left", fill="x", expand=True, ipady=8)
+
+        
+        tk.Label(bar, text="Sort:", font=self.f_label,
+                 bg=self.BG, fg=self.SUBTEXT).pack(side="left")
+        cb = ttk.Combobox(bar, textvariable=self.sort_var, state="readonly",
+                          values=["Date Added", "Priority", "Name", "Status"],
+                          width=14, font=self.f_entry)
+        cb.pack(side="left", padx=(4, 0))
+        cb.bind("<<ComboboxSelected>>", lambda _: self.refresh())
+
+  
+    def _build_task_list(self):
+        wrapper = tk.Frame(self.main, bg=self.BG)
+        wrapper.pack(fill="both", expand=True, padx=24, pady=(0, 12))
+
+        canvas = tk.Canvas(wrapper, bg=self.BG, highlightthickness=0)
+        sb = ttk.Scrollbar(wrapper, orient="vertical", command=canvas.yview)
+        self.task_frame = tk.Frame(canvas, bg=self.BG)
+
+        self.task_frame.bind("<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        canvas.create_window((0, 0), window=self.task_frame, anchor="nw")
+        canvas.configure(yscrollcommand=sb.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+
+        canvas.bind_all("<MouseWheel>",
+            lambda e: canvas.yview_scroll(-1*(e.delta//120), "units"))
+
+    
+    def _build_form(self):
+        form = tk.Frame(self.main, bg=self.PANEL, pady=16)
+        form.pack(fill="x", padx=0, side="bottom")
+
+        inner = tk.Frame(form, bg=self.PANEL)
+        inner.pack(fill="x", padx=24)
+
+        tk.Label(inner, text="NEW TASK", font=self.f_meta,
+                 bg=self.PANEL, fg=self.SUBTEXT).grid(row=0, column=0, sticky="w", pady=(0, 4))
+
+        
+        self.entry_title = tk.Entry(inner, font=self.f_entry, bg=self.CARD,
+                                    fg=self.TEXT, insertbackground=self.ACCENT2,
+                                    relief="flat", bd=0)
+        self.entry_title.grid(row=1, column=0, sticky="ew", ipady=9, padx=(0, 10))
+        self.entry_title.insert(0, "Task title…")
+        self.entry_title.bind("<FocusIn>",
+            lambda e: self.entry_title.delete(0, "end")
+            if self.entry_title.get() == "Task title…" else None)
+        self.entry_title.bind("<Return>", lambda e: self._add_task())
+
+        
+        self.prio_var = tk.StringVar(value="Medium")
+        prio_cb = ttk.Combobox(inner, textvariable=self.prio_var, state="readonly",
+                               values=list(self.PRIORITIES.keys()),
+                               width=10, font=self.f_entry)
+        prio_cb.grid(row=1, column=1, padx=(0, 10), sticky="ew")
+
+        
+        self.cat_var = tk.StringVar(value="General")
+        cat_cb = ttk.Combobox(inner, textvariable=self.cat_var, state="readonly",
+                              values=["General", "Work", "Personal", "Shopping", "Health", "Study"],
+                              width=11, font=self.f_entry)
+        cat_cb.grid(row=1, column=2, padx=(0, 10), sticky="ew")
+
+      
+        tk.Button(inner, text="＋ Add Task", font=self.f_btn,
+                  bg=self.ACCENT, fg="white", relief="flat", padx=20, pady=9,
+                  activebackground=self.ACCENT2, activeforeground="white",
+                  cursor="hand2", command=self._add_task).grid(row=1, column=3)
+
+        inner.columnconfigure(0, weight=1)
+
+    
+    def _set_filter(self, label):
+        self.filter_var.set(label)
+        for k, b in self.filter_btns.items():
+            b.configure(bg=self.ACCENT if k == label else self.CARD,
+                        fg=self.TEXT if k == label else self.SUBTEXT)
+        self.refresh()
+
+    
+    def refresh(self):
+        for w in self.task_frame.winfo_children():
+            w.destroy()
+
+        tasks = list(self.tasks)
+        q = self.search_var.get().lower().strip()
+        if q:
+            tasks = [t for t in tasks if q in t["title"].lower()
+                     or q in t.get("category", "").lower()]
+
+        f = self.filter_var.get()
+        if f == "Pending":
+            tasks = [t for t in tasks if not t.get("done")]
+        elif f == "Completed":
+            tasks = [t for t in tasks if t.get("done")]
+
+        sort = self.sort_var.get()
+        prio_order = {"High": 0, "Medium": 1, "Low": 2}
+        if sort == "Priority":
+            tasks.sort(key=lambda t: prio_order.get(t.get("priority", "Medium"), 1))
+        elif sort == "Name":
+            tasks.sort(key=lambda t: t["title"].lower())
+        elif sort == "Status":
+            tasks.sort(key=lambda t: t.get("done", False))
+
+        if not tasks:
+            tk.Label(self.task_frame, text="No tasks found  ✦",
+                     font=self.f_label, bg=self.BG, fg=self.SUBTEXT).pack(pady=40)
+        else:
+            for i, task in enumerate(tasks):
+                self._task_card(task, i)
+
+      
+        all_t   = self.tasks
+        done    = [t for t in all_t if t.get("done")]
+        pending = [t for t in all_t if not t.get("done")]
+        high    = [t for t in all_t if t.get("priority") == "High" and not t.get("done")]
+        self.stat_total["text"]   = len(all_t)
+        self.stat_done["text"]    = len(done)
+        self.stat_pending["text"] = len(pending)
+        self.stat_high["text"]    = len(high)
+
+    
+    def _task_card(self, task, idx):
+        done  = task.get("done", False)
+        color = self.PRIORITIES.get(task.get("priority", "Medium"), self.WARN)
+
+        card = tk.Frame(self.task_frame, bg=self.CARD, pady=12, padx=14,
+                        highlightbackground=self.BORDER, highlightthickness=1)
+        card.pack(fill="x", pady=4, padx=2)
+        card.columnconfigure(1, weight=1)
+
+      
+        stripe = tk.Frame(card, bg=color, width=4)
+        stripe.grid(row=0, column=0, rowspan=2, sticky="ns", padx=(0, 12))
+
+        
+        var = tk.BooleanVar(value=done)
+        def toggle(t=task, v=var):
+            t["done"] = v.get()
+            save_tasks(self.tasks)
+            self.refresh()
+        chk = tk.Checkbutton(card, variable=var, command=toggle,
+                             bg=self.CARD, activebackground=self.CARD,
+                             selectcolor=self.CARD, fg=self.SUCCESS,
+                             highlightthickness=0, bd=0)
+        chk.grid(row=0, column=1, sticky="w", rowspan=2)
+
+        
+        title_color = self.SUBTEXT if done else self.TEXT
+        title_font  = font.Font(family="Segoe UI", size=12,
+                                overstrike=1 if done else 0,
+                                weight="bold")
+        tk.Label(card, text=task["title"], font=title_font,
+                 bg=self.CARD, fg=title_color, anchor="w").grid(
+                 row=0, column=2, sticky="ew", padx=(4, 12))
+
+        
+        meta = f"  {task.get('category','General')}  ·  {task.get('priority','Medium')} priority  ·  {task.get('date','')}"
+        tk.Label(card, text=meta, font=self.f_meta,
+                 bg=self.CARD, fg=self.SUBTEXT).grid(row=1, column=2, sticky="w", padx=(4, 0))
+
+        
+        badge = tk.Label(card, text=task.get("category", "General"),
+                         font=self.f_meta, bg=self.BG, fg=self.ACCENT2,
+                         padx=8, pady=2)
+        badge.grid(row=0, column=3, padx=6)
+
+        
+        tk.Button(card, text="✏", font=self.f_meta,
+                  bg=self.CARD, fg=self.SUBTEXT, relief="flat", bd=0,
+                  activebackground=self.CARD, activeforeground=self.ACCENT2,
+                  cursor="hand2",
+                  command=lambda t=task: self._edit_dialog(t)).grid(row=0, column=4, padx=2)
+
+    
+        tk.Button(card, text="✕", font=self.f_meta,
+                  bg=self.CARD, fg=self.SUBTEXT, relief="flat", bd=0,
+                  activebackground=self.CARD, activeforeground=self.DANGER,
+                  cursor="hand2",
+                  command=lambda t=task: self._delete_task(t)).grid(row=0, column=5, padx=(2, 4))
+
+  
+    def _add_task(self):
+        title = self.entry_title.get().strip()
+        if not title or title == "Task title…":
+            messagebox.showwarning("Empty Title", "Please enter a task title.")
+            return
+        task = {
+            "id":       len(self.tasks),
+            "title":    title,
+            "priority": self.prio_var.get(),
+            "category": self.cat_var.get(),
+            "done":     False,
+            "date":     datetime.now().strftime("%d %b %Y")
+        }
+        self.tasks.append(task)
+        save_tasks(self.tasks)
+        self.entry_title.delete(0, "end")
+        self.refresh()
+
+    
+    def _delete_task(self, task):
+        if messagebox.askyesno("Delete Task", f"Delete \"{task['title']}\"?"):
+            self.tasks.remove(task)
+            save_tasks(self.tasks)
+            self.refresh()
+
+  
+    def _clear_completed(self):
+        done = [t for t in self.tasks if t.get("done")]
+        if not done:
+            messagebox.showinfo("Nothing to clear", "No completed tasks found.")
+            return
+        if messagebox.askyesno("Clear Completed", f"Remove {len(done)} completed task(s)?"):
+            self.tasks = [t for t in self.tasks if not t.get("done")]
+            save_tasks(self.tasks)
+            self.refresh()
+
+  
+    def _edit_dialog(self, task):
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Edit Task")
+        dlg.geometry("440x260")
+        dlg.configure(bg=self.PANEL)
+        dlg.resizable(False, False)
+        dlg.grab_set()
+
+        tk.Label(dlg, text="Edit Task", font=self.f_label,
+                 bg=self.PANEL, fg=self.TEXT).pack(pady=(20, 10))
+
+        fields = tk.Frame(dlg, bg=self.PANEL)
+        fields.pack(fill="x", padx=24)
+
+        tk.Label(fields, text="Title", font=self.f_meta, bg=self.PANEL, fg=self.SUBTEXT).grid(
+            row=0, column=0, sticky="w")
+        e_title = tk.Entry(fields, font=self.f_entry, bg=self.CARD, fg=self.TEXT,
+                           insertbackground=self.ACCENT2, relief="flat", bd=0)
+        e_title.insert(0, task["title"])
+        e_title.grid(row=1, column=0, sticky="ew", ipady=8, pady=(2, 10))
+
+        tk.Label(fields, text="Priority", font=self.f_meta, bg=self.PANEL, fg=self.SUBTEXT).grid(
+            row=2, column=0, sticky="w")
+        pv = tk.StringVar(value=task.get("priority", "Medium"))
+        ttk.Combobox(fields, textvariable=pv, state="readonly",
+                     values=list(self.PRIORITIES.keys()),
+                     font=self.f_entry).grid(row=3, column=0, sticky="ew", pady=(2, 10))
+
+        tk.Label(fields, text="Category", font=self.f_meta, bg=self.PANEL, fg=self.SUBTEXT).grid(
+            row=4, column=0, sticky="w")
+        cv = tk.StringVar(value=task.get("category", "General"))
+        ttk.Combobox(fields, textvariable=cv, state="readonly",
+                     values=["General", "Work", "Personal", "Shopping", "Health", "Study"],
+                     font=self.f_entry).grid(row=5, column=0, sticky="ew", pady=(2, 10))
+        fields.columnconfigure(0, weight=1)
+
+        def save():
+            t = e_title.get().strip()
+            if not t:
+                messagebox.showwarning("Empty Title", "Title cannot be empty.")
+                return
+            task["title"]    = t
+            task["priority"] = pv.get()
+            task["category"] = cv.get()
+            save_tasks(self.tasks)
+            self.refresh()
+            dlg.destroy()
+
+        tk.Button(dlg, text="Save Changes", font=self.f_btn,
+                  bg=self.ACCENT, fg="white", relief="flat", padx=20, pady=8,
+                  activebackground=self.ACCENT2, cursor="hand2",
+                  command=save).pack(pady=16)
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = ToDoApp(root)
+    root.mainloop()
